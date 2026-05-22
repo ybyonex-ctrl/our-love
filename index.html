@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>我们的浪漫星球</title>
+    <style>
+        :root { --pink: #ffb3c6; --rose: #ff8fab; }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: radial-gradient(ellipse at center, #1c0028 0%, #0f0018 45%, #07000e 100%);
+            height: 100vh; width: 100vw; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+            perspective: 1600px;
+            user-select: none; -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            cursor: grab;
+        }
+        body:active { cursor: grabbing; }
+        body.zoomed { cursor: pointer; }
+
+        /* ===== 画布层 ===== */
+        #starCanvas, #petalCanvas {
+            position: fixed; inset: 0;
+            pointer-events: none;
+        }
+        #starCanvas { z-index: 1; }
+        #petalCanvas { z-index: 5; }
+
+        /* ===== 3D 舞台 ===== */
+        .viewport {
+            position: relative; width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            transform-style: preserve-3d; z-index: 3;
+        }
+        .stage {
+            position: relative; transform-style: preserve-3d;
+            width: 0; height: 0;
+        }
+        .photo-card {
+            position: absolute;
+            width: 155px; height: 210px;
+            left: -77.5px; top: -105px;
+            border-radius: 18px;
+            background-size: cover; background-position: center;
+            box-shadow:
+                0 18px 50px rgba(0,0,0,0.65),
+                0 0 22px rgba(255,140,170,0.22),
+                0 0 65px rgba(255,120,160,0.1);
+            border: 2px solid rgba(255,255,255,0.18);
+            cursor: pointer;
+            transform-style: preserve-3d;
+            backface-visibility: visible;
+            pointer-events: auto;
+            transition: border-color 0.35s, box-shadow 0.35s;
+            background-color: rgba(255,255,255,0.02);
+            background-blend-mode: overlay;
+            will-change: transform;
+        }
+        .photo-card::after {
+            content: ''; position: absolute; inset: 0; border-radius: 16px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 50%, rgba(255,180,200,0.06) 100%);
+            pointer-events: none;
+        }
+        .photo-card:hover {
+            border-color: rgba(255,140,180,0.85);
+            box-shadow:
+                0 18px 50px rgba(0,0,0,0.65),
+                0 0 35px rgba(255,120,150,0.65),
+                0 0 80px rgba(255,100,140,0.3);
+            z-index: 999 !important;
+        }
+
+        /* ===== UI 元素 ===== */
+        #mode-indicator {
+            position: fixed; bottom: 6%; left: 50%; transform: translateX(-50%);
+            z-index: 20; display: flex; gap: 10px; align-items: center; pointer-events: none;
+        }
+        #mode-indicator .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: rgba(255,255,255,0.25);
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #mode-indicator .dot.active {
+            background: #ffb3c6;
+            box-shadow: 0 0 12px rgba(255,150,180,0.8), 0 0 24px rgba(255,140,170,0.4);
+            width: 10px; height: 10px;
+        }
+        #mode-name {
+            position: fixed; bottom: 12%; left: 50%; transform: translateX(-50%);
+            z-index: 20; pointer-events: none;
+            color: rgba(255,255,255,0.7); font-size: 13px; letter-spacing: 5px;
+            opacity: 0; transition: opacity 0.6s;
+        }
+        .title-area {
+            position: fixed; top: 6%; width: 100%; text-align: center;
+            z-index: 10; pointer-events: none;
+        }
+        .title-area h1 {
+            font-size: clamp(18px, 3vw, 34px); font-weight: 300; color: #fff;
+            letter-spacing: 10px;
+            text-shadow: 0 0 12px rgba(255,180,200,0.5), 0 0 30px rgba(255,140,170,0.35);
+            opacity: 0.8;
+        }
+        .lyrics-container {
+            position: fixed; bottom: 18%; width: 100%; text-align: center;
+            z-index: 10; pointer-events: none;
+        }
+        .lyrics {
+            color: #fff; font-size: clamp(15px, 1.8vw, 21px); font-weight: 300;
+            letter-spacing: 6px;
+            text-shadow: 0 0 12px rgba(255,180,200,0.5), 0 0 30px rgba(255,140,170,0.35);
+            opacity: 0; padding: 0 24px;
+        }
+        .audio-player {
+            position: fixed; top: 24px; right: 24px; z-index: 100;
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.12);
+            padding: 11px 22px; border-radius: 30px;
+            color: #fff; font-size: 13px; cursor: pointer;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+            transition: all 0.4s;
+            display: flex; align-items: center; gap: 10px; letter-spacing: 1.5px;
+        }
+        .audio-player:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,140,170,0.45);
+            box-shadow: 0 4px 28px rgba(0,0,0,0.4), 0 0 28px rgba(255,120,150,0.35);
+        }
+        .audio-player.playing {
+            border-color: rgba(255,140,170,0.5);
+            box-shadow: 0 4px 28px rgba(0,0,0,0.4), 0 0 24px rgba(255,120,150,0.45);
+            animation: glow 2.5s ease-in-out infinite;
+        }
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 4px 28px rgba(0,0,0,0.4), 0 0 24px rgba(255,120,150,0.45); }
+            50% { box-shadow: 0 4px 28px rgba(0,0,0,0.4), 0 0 44px rgba(255,140,180,0.75); }
+        }
+
+        /* ===== 情侣名牌 ===== */
+        .couple-badge {
+            position: fixed; top: 22px; left: 24px; z-index: 100;
+            display: flex; align-items: center; gap: 10px;
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255,140,170,0.3);
+            border-radius: 30px;
+            padding: 9px 20px 9px 14px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 16px rgba(255,130,160,0.15);
+            pointer-events: none;
+        }
+        .badge-heart {
+            font-size: 22px;
+            animation: heartBeat 1.2s ease-in-out infinite;
+            filter: drop-shadow(0 0 6px rgba(255,100,140,0.6));
+        }
+        @keyframes heartBeat {
+            0%, 100% { transform: scale(1); }
+            14% { transform: scale(1.25); }
+            28% { transform: scale(1); }
+            42% { transform: scale(1.2); }
+            56% { transform: scale(1); }
+        }
+        .badge-names {
+            display: flex; flex-direction: column; gap: 1px;
+        }
+        .badge-name {
+            font-size: 13px; font-weight: 400; letter-spacing: 3px;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(255,160,180,0.5);
+        }
+        .badge-name.left {
+            background: linear-gradient(90deg, #ffb3c6, #ffd1dc, #fff);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .badge-name.right {
+            background: linear-gradient(90deg, #fff, #ffd1dc, #ffb3c6);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        /* 名牌边框流光 */
+        .couple-badge::before {
+            content: ''; position: absolute; inset: -1px; border-radius: 31px;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(255,150,180,0.5), transparent 40%, transparent 60%, rgba(255,150,180,0.5));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor; mask-composite: exclude;
+            animation: badgeShimmer 3s linear infinite;
+            pointer-events: none;
+        }
+        @keyframes badgeShimmer {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+
+        @media (max-width: 768px) {
+            .photo-card { width: 105px; height: 145px; left: -52.5px; top: -72.5px; border-radius: 12px; }
+            .photo-card::after { border-radius: 10px; }
+            .audio-player { top: 14px; right: 12px; padding: 9px 16px; font-size: 11px; gap: 6px; }
+            #mode-indicator { bottom: 5%; }
+            #mode-name { bottom: 10%; font-size: 11px; letter-spacing: 3px; }
+            .lyrics-container { bottom: 15%; }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="starCanvas"></canvas>
+    <canvas id="petalCanvas"></canvas>
+
+    <div class="title-area"><h1>遇 见 你 ， 是 最 美 的 意 外</h1></div>
+
+    <!-- 情侣名牌 -->
+    <div class="couple-badge" id="couple-badge">
+        <span class="badge-heart">❤️</span>
+        <div class="badge-names">
+            <span class="badge-name left">唐一博</span>
+            <span class="badge-name right">燕冰</span>
+        </div>
+    </div>
+
+    <audio id="bgm" src="./music.mp3" loop preload="auto"></audio>
+    <div class="audio-player" id="player-btn" onclick="toggleMusic()">
+        <span id="music-icon">🎵</span>
+        <span id="music-text">播放音乐</span>
+    </div>
+
+    <div class="viewport"><div class="stage" id="stage"></div></div>
+
+    <div class="lyrics-container"><div class="lyrics" id="lyrics"></div></div>
+
+    <div id="mode-name"></div>
+    <div id="mode-indicator"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script>
+    (function() {
+        // ==================== 图片 ====================
+        const imgBase = './images/';
+        const imgNames = [
+            '微信图片_20260522214955_22_111.jpg','微信图片_20260522215013_23_111.jpg',
+            '微信图片_20260522215015_24_111.jpg','微信图片_20260522215021_26_111.jpg',
+            '微信图片_20260522215022_27_111.jpg','微信图片_20260522215023_28_111.jpg',
+            '微信图片_20260522215024_29_111.jpg','微信图片_20260522215025_30_111.jpg',
+            '微信图片_20260522215221_31_111.jpg','微信图片_20260522215221_32_111.jpg',
+            '微信图片_20260522215222_33_111.jpg','微信图片_20260522215223_34_111.jpg',
+            '微信图片_20260522215224_35_111.jpg','微信图片_20260522215225_36_111.jpg',
+            '微信图片_20260522215226_37_111.jpg','微信图片_20260522215227_38_111.jpg',
+            '微信图片_20260522215228_39_111.jpg','微信图片_20260522215230_40_111.jpg',
+            '微信图片_20260522215334_41_111.jpg','微信图片_20260522215335_42_111.jpg',
+            '微信图片_20260522215336_43_111.jpg','微信图片_20260522215337_44_111.jpg',
+            '微信图片_20260522215339_46_111.jpg','微信图片_20260522215340_47_111.jpg'
+        ];
+        const imageUrls = imgNames.map(n => imgBase + encodeURI(n).replace(/%2F/g, '/'));
+
+        // ==================== DOM ====================
+        const stage = document.getElementById('stage');
+        const lyricsEl = document.getElementById('lyrics');
+        const modeNameEl = document.getElementById('mode-name');
+        const indicatorEl = document.getElementById('mode-indicator');
+        const bgm = document.getElementById('bgm');
+        bgm.addEventListener('error', () => {
+            console.error('音频加载失败，请检查 music.mp3 是否在 index.html 同目录下');
+        }, { once: true });
+        bgm.addEventListener('canplaythrough', () => {
+            console.log('音频已就绪，可以播放');
+        }, { once: true });
+        const body = document.body;
+        const starCanvas = document.getElementById('starCanvas');
+        const starCtx = starCanvas.getContext('2d');
+        const petalCanvas = document.getElementById('petalCanvas');
+        const petalCtx = petalCanvas.getContext('2d');
+
+        let W, H;
+
+        function resize() {
+            W = starCanvas.width = petalCanvas.width = window.innerWidth;
+            H = starCanvas.height = petalCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // ==================== 布局模式 ====================
+        const modeNames = ['双螺旋', '星球环绕', '柔波涟漪', '同心之环', '心动之形'];
+        let currentMode = 0;
+        let cards = [], totalCards = 0;
+
+        modeNames.forEach((name, i) => {
+            const dot = document.createElement('div');
+            dot.className = 'dot' + (i === 0 ? ' active' : '');
+            indicatorEl.appendChild(dot);
+        });
+
+        function showModeName(name) {
+            gsap.killTweensOf(modeNameEl);
+            modeNameEl.textContent = name;
+            gsap.timeline()
+                .set(modeNameEl, { opacity: 1, y: 0 })
+                .to(modeNameEl, { opacity: 0, y: -16, duration: 1.8, ease: 'power2.out', delay: 1.5 });
+        }
+
+        function getLayoutTargets(mode) {
+            const total = totalCards;
+            const targets = [];
+            const radius = 420;
+
+            for (let i = 0; i < total; i++) {
+                let x, y, z, rotX, rotY, rotZ = 0;
+
+                switch (mode) {
+                    case 0: { // 双螺旋
+                        const a = (i / total) * Math.PI * 4.2;
+                        x = Math.sin(a) * radius;
+                        y = (i - total / 2) * 50;
+                        z = Math.cos(a) * radius;
+                        rotX = 6; rotY = (a * 180 / Math.PI) + 180;
+                        break;
+                    }
+                    case 1: { // 星球环绕
+                        const phi = Math.PI * (3 - Math.sqrt(5));
+                        const ny = 1 - (i / (total - 1)) * 2;
+                        const rAtY = Math.sqrt(1 - ny * ny);
+                        const theta = phi * i;
+                        x = Math.cos(theta) * rAtY * radius;
+                        y = ny * radius * 0.75;
+                        z = Math.sin(theta) * rAtY * radius;
+                        rotX = -Math.asin(ny) * 180 / Math.PI;
+                        rotY = theta * 180 / Math.PI + 90;
+                        break;
+                    }
+                    case 2: { // 柔波涟漪
+                        const t = (i / total) * Math.PI * 3.5;
+                        x = (i - total / 2) * 55;
+                        y = Math.sin(t) * 160;
+                        z = Math.cos(t) * 200;
+                        rotX = Math.cos(t) * 20;
+                        rotY = (i / total) * 360 - 180;
+                        rotZ = Math.sin(t) * 10;
+                        break;
+                    }
+                    case 3: { // 同心之环
+                        const rings = 3;
+                        const perRing = Math.ceil(total / rings);
+                        const ring = Math.floor(i / perRing);
+                        const idxInRing = i % perRing;
+                        const countInRing = (ring === rings - 1) ? total - ring * perRing : perRing;
+                        const angle = (idxInRing / countInRing) * Math.PI * 2;
+                        const r = 240 + ring * 140;
+                        x = Math.cos(angle) * r;
+                        y = (ring - (rings - 1) / 2) * 100;
+                        z = Math.sin(angle) * r;
+                        rotY = angle * 180 / Math.PI + 90;
+                        break;
+                    }
+                    case 4: { // 心动之形
+                        const t2 = (i / total) * Math.PI * 2;
+                        x = 16 * Math.pow(Math.sin(t2), 3) * 28;
+                        y = -(13 * Math.cos(t2) - 5 * Math.cos(2 * t2) - 2 * Math.cos(3 * t2) - Math.cos(4 * t2)) * 28;
+                        z = Math.sin(t2 * 2) * 60;
+                        rotY = z * 0.15;
+                        break;
+                    }
+                }
+                targets.push({ x, y, z, rotX, rotY, rotZ });
+            }
+            return targets;
+        }
+
+        function animateToLayout(mode, duration = 2.5) {
+            const targets = getLayoutTargets(mode);
+            cards.forEach((card, i) => {
+                const t = targets[i];
+                gsap.to(card, {
+                    x: t.x, y: t.y, z: t.z,
+                    scale: 1,
+                    rotationX: t.rotX, rotationY: t.rotY, rotationZ: t.rotZ,
+                    opacity: 1,
+                    duration: duration,
+                    ease: 'power3.inOut',
+                    delay: i * 0.03
+                });
+            });
+            showModeName(modeNames[mode]);
+            indicatorEl.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === mode));
+        }
+
+        function switchToNextMode() {
+            currentMode = (currentMode + 1) % modeNames.length;
+            animateToLayout(currentMode);
+        }
+
+        // 创建卡片（仅 DOM 部分——照片需要 DOM 来响应点击）
+        imageUrls.forEach((url, i) => {
+            const card = document.createElement('div');
+            card.className = 'photo-card';
+            card.style.backgroundImage = `url(${url})`;
+            stage.appendChild(card);
+            cards.push(card);
+            gsap.set(card, {
+                x: (Math.random() - 0.5) * 1600,
+                y: (Math.random() - 0.5) * 1100,
+                z: (Math.random() - 1) * 2200 - 400,
+                rotationX: (Math.random() - 0.5) * 360,
+                rotationY: (Math.random() - 0.5) * 360,
+                opacity: 0
+            });
+        });
+        totalCards = cards.length;
+
+        // ==================== 舞台旋转 ====================
+        let autoRotate = gsap.to(stage, {
+            rotationY: 360, duration: 30, repeat: -1, ease: 'none'
+        });
+
+        // ==================== 卡片交互 ====================
+        let zoomedCard = null;
+
+        function zoomToCard(card) {
+            zoomedCard = card;
+            autoRotate.pause();
+            body.classList.add('zoomed');
+            // 舞台复位
+            gsap.to(stage, { rotationY: 0, rotationX: 0, duration: 0.5, ease: 'power2.out' });
+            // 其他卡片缩小后退
+            cards.forEach(c => {
+                if (c !== card) gsap.to(c, { opacity: 0.03, scale: 0.25, z: '-=700', duration: 0.6, ease: 'power2.in' });
+            });
+            // 目标卡片放大到正前方
+            gsap.to(card, {
+                x: 0, y: 0, z: 550,
+                scale: 2.2,
+                rotationX: 0, rotationY: 0, rotationZ: 0,
+                opacity: 1, duration: 0.9, ease: 'back.out(1.3)', delay: 0.2
+            });
+        }
+
+        function unzoom() {
+            const card = zoomedCard;
+            zoomedCard = null;
+            body.classList.remove('zoomed');
+            // 恢复缩放
+            cards.forEach(c => gsap.to(c, { scale: 1, duration: 0.35, ease: 'power2.out' }));
+            animateToLayout(currentMode, 1.2);
+            autoRotate.play();
+        }
+
+        cards.forEach(card => {
+            card.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (zoomedCard === card) {
+                    // 点击已放大的卡片 → 还原
+                    unzoom();
+                } else if (zoomedCard) {
+                    // 已有卡片放大中 → 直接切到新卡片
+                    zoomToCard(card);
+                } else {
+                    zoomToCard(card);
+                }
+            });
+        });
+
+        document.body.addEventListener('dblclick', (e) => {
+            if (e.target.closest('.photo-card') || e.target.closest('.audio-player')) return;
+            if (zoomedCard) unzoom();
+            switchToNextMode();
+        });
+
+        document.body.addEventListener('click', (e) => {
+            if (e.target.closest('.photo-card') || e.target.closest('.audio-player')) return;
+            if (zoomedCard) unzoom();
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') { e.preventDefault(); toggleMusic(); }
+            else if (e.code === 'ArrowRight') switchToNextMode();
+            else if (e.code === 'ArrowLeft') {
+                currentMode = (currentMode - 1 + modeNames.length) % modeNames.length;
+                animateToLayout(currentMode);
+            }
+        });
+
+        // 拖拽旋转
+        let isDragging = false, dragStartX = 0, dragStartRotY = 0, dragTimeout;
+        stage.addEventListener('mousedown', (e) => {
+            if (e.target.closest('.photo-card')) return;
+            isDragging = true; dragStartX = e.clientX;
+            dragStartRotY = gsap.getProperty(stage, 'rotationY');
+            autoRotate.pause(); clearTimeout(dragTimeout);
+        });
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            gsap.set(stage, { rotationY: dragStartRotY + (e.clientX - dragStartX) * 0.4 });
+        });
+        window.addEventListener('mouseup', () => {
+            if (!isDragging) return;
+            isDragging = false;
+            const ry = gsap.getProperty(stage, 'rotationY');
+            dragTimeout = setTimeout(() => {
+                autoRotate = gsap.to(stage, { rotationY: ry + 360, duration: 30, repeat: -1, ease: 'none' });
+            }, 2000);
+        });
+        stage.addEventListener('touchstart', (e) => {
+            if (e.target.closest('.photo-card')) return;
+            isDragging = true; dragStartX = e.touches[0].clientX;
+            dragStartRotY = gsap.getProperty(stage, 'rotationY');
+            autoRotate.pause(); clearTimeout(dragTimeout);
+        }, { passive: false });
+        window.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            gsap.set(stage, { rotationY: dragStartRotY + (e.touches[0].clientX - dragStartX) * 0.4 });
+        }, { passive: false });
+        window.addEventListener('touchend', () => {
+            if (!isDragging) return;
+            isDragging = false;
+            const ry = gsap.getProperty(stage, 'rotationY');
+            dragTimeout = setTimeout(() => {
+                autoRotate = gsap.to(stage, { rotationY: ry + 360, duration: 30, repeat: -1, ease: 'none' });
+            }, 2000);
+        });
+
+        // ==================== 音频节奏模拟 ====================
+        // 用时间模拟心跳般的律动，无需 Web Audio API
+        let bassV = 0, midV = 0, trebleV = 0;
+
+        function updateAudio() {
+            const t = performance.now() / 1000;
+            // 模拟心跳节拍：低频像心跳，中频像呼吸
+            const beat = Math.abs(Math.sin(t * 1.4)) * (bgm.paused ? 0.15 : 0.7);
+            const breath = Math.sin(t * 0.35) * 0.5 + 0.5;
+            bassV += (beat - bassV) * 0.1;
+            midV += (breath - midV) * 0.05;
+            trebleV += ((Math.sin(t * 2.1) * 0.3 + 0.3) - trebleV) * 0.08;
+        }
+
+        // ==================== Canvas 樱花花瓣（替代 80 个 DOM） ====================
+        const petalColors = [
+            '#ffc0cb','#ffb6c1','#ffc4d0','#f9acb5','#ffb3c6',
+            '#f8a5c2','#ffccd5','#f5b7c5','#ffd1dc','#fec7d7',
+            '#ffb3ba','#ffc8d6','#ffe0e5','#ffb8c6'
+        ];
+
+        const petalData = [];
+        const PETAL_COUNT = 110;
+
+        // 预计算花瓣形状（画一次，之后用 drawImage 复制，性能远超逐个绘制路径）
+        function makePetalTex(size, color) {
+            const c = document.createElement('canvas');
+            const s = Math.ceil(size * 1.8);
+            c.width = c.height = s;
+            const cx = c.getContext('2d');
+            const grad = cx.createRadialGradient(s * 0.32, s * 0.28, s * 0.05, s * 0.4, s * 0.45, s * 0.7);
+            grad.addColorStop(0, color);
+            grad.addColorStop(0.55, color + 'cc');
+            grad.addColorStop(1, color + '00');
+            cx.fillStyle = grad;
+            cx.beginPath();
+            // 花瓣形状
+            cx.ellipse(s * 0.4, s * 0.42, s * 0.38, s * 0.5, 0.3, 0, Math.PI * 2);
+            cx.fill();
+            // 底部尖角
+            cx.beginPath();
+            cx.moveTo(s * 0.25, s * 0.35);
+            cx.quadraticCurveTo(s * 0.4, s * 0.85, s * 0.4 - s * 0.12, s * 0.95);
+            cx.lineTo(s * 0.4 + s * 0.12, s * 0.95);
+            cx.quadraticCurveTo(s * 0.4, s * 0.85, s * 0.55, s * 0.35);
+            cx.fill();
+            return c;
+        }
+
+        const petalTextures = [];
+        // 预生成不同尺寸/颜色的纹理池
+        const texSizes = [6, 9, 13, 17];
+        texSizes.forEach(sz => {
+            petalColors.forEach(col => {
+                petalTextures.push({ tex: makePetalTex(sz, col), size: sz });
+            });
+        });
+
+        for (let i = 0; i < PETAL_COUNT; i++) {
+            const depth = Math.random() * 500 - 250;
+            const layer = depth > 120 ? 2 : (depth < -120 ? 0 : 1);
+            const texEntry = petalTextures[Math.floor(Math.random() * petalTextures.length)];
+            petalData.push({
+                x: Math.random() * W,
+                y: -(Math.random() * H + 50),
+                z: depth,
+                layer: layer,
+                tex: texEntry.tex,
+                texSize: texEntry.size,
+                baseSize: texEntry.size,
+                fallBase: layer === 2 ? (Math.random() * 0.5 + 0.55) : layer === 0 ? (Math.random() * 0.18 + 0.15) : (Math.random() * 0.3 + 0.28),
+                swayAmp: 30 + Math.random() * 130,
+                swayFreq: Math.random() * 0.012 + 0.005,
+                rotSpeed: (Math.random() - 0.5) * 0.025,
+                phase: Math.random() * Math.PI * 2,
+                wobbleAmp: Math.random() * 20 + 5,
+                wobbleFreq: Math.random() * 0.02 + 0.008,
+                alpha: 0.5 + Math.random() * 0.45
+            });
+        }
+        // 按深度排序（远处先画）
+        petalData.sort((a, b) => a.z - b.z);
+
+        function drawPetals() {
+            petalCtx.clearRect(0, 0, W, H);
+
+            const speedB = 1 + bassV * 1.6;
+            const swayB = 1 + midV * 2.2;
+            const wobbB = 1 + trebleV * 1.8;
+
+            for (let i = 0; i < PETAL_COUNT; i++) {
+                const p = petalData[i];
+                const fs = p.fallBase * speedB + trebleV * 0.3;
+                p.y += fs;
+                const sway = Math.sin(p.y * p.swayFreq + p.phase) * p.swayAmp * swayB;
+                const wX = Math.cos(p.y * p.wobbleFreq + p.phase * 1.7) * p.wobbleAmp * wobbB;
+                const wY = Math.sin(p.y * p.wobbleFreq * 1.3 + p.phase) * p.wobbleAmp * 0.7 * wobbB;
+                const rot = p.y * p.rotSpeed * (1 + bassV) + wX * 0.4;
+
+                // 3D 模拟：z 深度映射到缩放比例
+                const scale3D = 0.6 + (p.z + 250) / 500 * 1.8; // 0.6 ~ 2.4
+                const drawSize = p.texSize * scale3D;
+
+                if (p.y > H * 0.65) {
+                    p.alpha = Math.max(0, p.alpha - 0.003 * fs);
+                } else if (p.y < 60 && p.alpha < 0.92) {
+                    p.alpha = Math.min(0.92, p.alpha + 0.004);
+                }
+
+                if (p.y > H + 90 || p.alpha <= 0) {
+                    p.y = -(Math.random() * 100 + 50);
+                    p.x = Math.random() * W;
+                    p.phase = Math.random() * Math.PI * 2;
+                    p.swayAmp = 30 + Math.random() * 130;
+                    p.alpha = 0.5 + Math.random() * 0.45;
+                }
+
+                const px = p.x + sway + wX;
+                const py = p.y + wY;
+
+                petalCtx.save();
+                petalCtx.globalAlpha = p.alpha;
+                petalCtx.translate(px, py);
+                petalCtx.rotate(rot);
+                // 模拟 rotateX 效果：压缩 Y 轴
+                const rxFactor = 0.6 + Math.abs(Math.sin(p.y * 0.004 + p.phase)) * 0.4;
+                petalCtx.scale(1, rxFactor);
+                petalCtx.drawImage(p.tex, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+                petalCtx.restore();
+            }
+        }
+
+        // ==================== Canvas 背景星光 ====================
+        const stars = [];
+        for (let i = 0; i < 110; i++) {
+            stars.push({
+                x: Math.random() * W,
+                y: Math.random() * H,
+                size: Math.random() * 2.2 + 0.6,
+                speedY: -(Math.random() * 0.5 + 0.18),
+                speedX: (Math.random() - 0.5) * 0.35,
+                baseAlpha: Math.random() * 0.4 + 0.1,
+                twinklePhase: Math.random() * Math.PI * 2,
+                twinkleSpeed: Math.random() * 0.04 + 0.01,
+                isPink: Math.random() > 0.35
+            });
+        }
+
+        function drawStars() {
+            starCtx.clearRect(0, 0, W, H);
+            for (let i = 0; i < stars.length; i++) {
+                const s = stars[i];
+                s.y += s.speedY;
+                s.x += s.speedX + Math.sin(s.y * 0.002) * 0.25;
+                if (s.y < -20) { s.y = H + 20; s.x = Math.random() * W; }
+
+                const at = 1 + bassV * 2.5 + midV * 0.6;
+                const alpha = s.baseAlpha + Math.sin(s.twinklePhase) * 0.15 * at;
+                s.twinklePhase += s.twinkleSpeed;
+                const r = s.isPink ? 255 : 240;
+                const g = s.isPink ? 150 + Math.floor(bassV * 70) : 170;
+
+                starCtx.beginPath();
+                starCtx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+                starCtx.fillStyle = `rgba(${r},${g},${s.isPink ? 185 : 200},${alpha})`;
+                starCtx.shadowBlur = s.size * (3 + bassV * 10);
+                starCtx.shadowColor = `rgba(${r},${g},${s.isPink ? 185 : 200},${alpha})`;
+                starCtx.fill();
+            }
+            starCtx.shadowBlur = 0;
+        }
+
+        // ==================== 文字 ====================
+        const textLines = [
+            "你是所有方向里，唯一的目的地",
+            "命运交织，把我们连在一起",
+            "你在身边，就是最好的时光",
+            "纵使花瓣随风散去，终会飘回原点",
+            "所有的偶然，都是命中注定的必然",
+            "遇见你的那一刻，世界就安静了",
+            "想和你一起，看遍世间所有风景",
+            "你一笑，我的整个宇宙都亮了"
+        ];
+        let textIdx = 0;
+        function rotateText() {
+            lyricsEl.innerText = textLines[textIdx];
+            textIdx = (textIdx + 1) % textLines.length;
+            gsap.timeline()
+                .to(lyricsEl, { opacity: 1, y: -6, duration: 1.4, ease: 'power2.out' })
+                .to(lyricsEl, { opacity: 0, y: -20, duration: 1.4, ease: 'power2.in', delay: 3.5 })
+                .call(rotateText);
+        }
+
+        // ==================== 音乐 ====================
+        const musicIcon = document.getElementById('music-icon');
+        const musicText = document.getElementById('music-text');
+        const playerBtn = document.getElementById('player-btn');
+
+        function updateMusicUI(playing) {
+            if (playing) {
+                musicIcon.innerText = '💗';
+                musicText.innerText = '心似烟火 · 陈壹千';
+                playerBtn.classList.add('playing');
+            } else {
+                musicIcon.innerText = '🎵';
+                musicText.innerText = '播放音乐';
+                playerBtn.classList.remove('playing');
+            }
+        }
+
+        function playMusic() {
+            return bgm.play().then(() => {
+                updateMusicUI(true);
+                hideClickHint();
+            }).catch((e) => {
+                console.error('播放失败:', e);
+                updateMusicUI(false);
+            });
+        }
+
+        function toggleMusic() {
+            if (bgm.paused) {
+                playMusic();
+            } else {
+                bgm.pause();
+                updateMusicUI(false);
+            }
+        }
+
+        // 优雅引导遮罩
+        let clickHintEl = null;
+        function showClickHint() {
+            if (clickHintEl) return;
+            clickHintEl = document.createElement('div');
+            clickHintEl.style.cssText = `
+                position: fixed; inset: 0; z-index: 999;
+                background: rgba(5,0,10,0.78);
+                display: flex; flex-direction: column;
+                align-items: center; justify-content: center;
+                cursor: pointer;
+                backdrop-filter: blur(6px);
+                -webkit-backdrop-filter: blur(6px);
+            `;
+            clickHintEl.innerHTML = `
+                <div style="
+                    color: #fff; font-size: clamp(18px, 2.5vw, 28px);
+                    font-weight: 300; letter-spacing: 8px;
+                    text-shadow: 0 0 20px rgba(255,150,180,0.7);
+                    margin-bottom: 22px;
+                    animation: hintPulse 2s ease-in-out infinite;
+                ">💗 点 击 屏 幕 💗</div>
+                <div style="
+                    color: rgba(255,255,255,0.45); font-size: 13px;
+                    letter-spacing: 4px;
+                ">开启音乐旅程</div>
+            `;
+            const style = document.createElement('style');
+            style.textContent = '@keyframes hintPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.7;transform:scale(1.04)} }';
+            clickHintEl.appendChild(style);
+            document.body.appendChild(clickHintEl);
+        }
+
+        function hideClickHint() {
+            if (!clickHintEl) return;
+            clickHintEl.style.opacity = '0';
+            clickHintEl.style.transition = 'opacity 0.5s';
+            clickHintEl.style.pointerEvents = 'none';
+            setTimeout(() => {
+                if (clickHintEl) { clickHintEl.remove(); clickHintEl = null; }
+            }, 600);
+        }
+
+        // 首次用户交互即播放
+        function onFirstInteraction() {
+            if (!bgm.paused || playerBtn.classList.contains('playing')) return;
+            playMusic();
+        }
+        ['click', 'touchstart', 'keydown'].forEach(evt => {
+            document.addEventListener(evt, onFirstInteraction, { once: false });
+        });
+
+        // ==================== 自动切换模式 ====================
+        let autoSwitch;
+        function startAutoSwitch() {
+            clearInterval(autoSwitch);
+            autoSwitch = setInterval(() => {
+                if (!body.classList.contains('zoomed') && !isDragging) switchToNextMode();
+            }, 10000);
+        }
+        startAutoSwitch();
+
+        // ==================== 主循环 ====================
+        function loop() {
+            updateAudio();
+            drawPetals();
+            drawStars();
+            requestAnimationFrame(loop);
+        }
+
+        window.onload = () => {
+            setTimeout(() => {
+                animateToLayout(0, 2.8);
+                rotateText();
+                requestAnimationFrame(loop);
+                // 展示引导——等用户点击后通过 AudioContext 播放音乐
+                showClickHint();
+            }, 500);
+        };
+    })();
+    </script>
+</body>
+</html>
