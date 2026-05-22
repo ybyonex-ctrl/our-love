@@ -414,16 +414,13 @@
         });
         totalCards = cards.length;
 
-        // 逐张后台加载图片，避免同时请求 24 张大图阻塞移动网络
-        let loadedCount = 0;
+        // 全部图片同时加载，加载完立刻显示
         imageUrls.forEach((url, i) => {
             const img = new Image();
             img.onload = img.onerror = () => {
-                loadedCount++;
                 cards[i].style.backgroundImage = `url(${url})`;
             };
-            // 错开加载：每张间隔 200ms，避免同时并发
-            setTimeout(() => { img.src = url; }, i * 200);
+            img.src = url;
         });
 
         // ==================== 舞台旋转 ====================
