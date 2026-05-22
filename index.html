@@ -225,7 +225,7 @@
         </div>
     </div>
 
-    <audio id="bgm" src="./music.mp3" loop preload="auto"></audio>
+    <audio id="bgm" src="./music.mp3" loop preload="none"></audio>
     <div class="audio-player" id="player-btn" onclick="toggleMusic()">
         <span id="music-icon">🎵</span>
         <span id="music-text">播放音乐</span>
@@ -395,11 +395,12 @@
             animateToLayout(currentMode);
         }
 
-        // 创建卡片（仅 DOM 部分——照片需要 DOM 来响应点击）
+        // 创建卡片（渐进加载图片）
         imageUrls.forEach((url, i) => {
             const card = document.createElement('div');
             card.className = 'photo-card';
-            card.style.backgroundImage = `url(${url})`;
+            // 先放模糊占位色，真正图片后台加载
+            card.style.background = 'rgba(255,180,200,0.06)';
             stage.appendChild(card);
             cards.push(card);
             gsap.set(card, {
@@ -412,6 +413,18 @@
             });
         });
         totalCards = cards.length;
+
+        // 逐张后台加载图片，避免同时请求 24 张大图阻塞移动网络
+        let loadedCount = 0;
+        imageUrls.forEach((url, i) => {
+            const img = new Image();
+            img.onload = img.onerror = () => {
+                loadedCount++;
+                cards[i].style.backgroundImage = `url(${url})`;
+            };
+            // 错开加载：每张间隔 200ms，避免同时并发
+            setTimeout(() => { img.src = url; }, i * 200);
+        });
 
         // ==================== 舞台旋转 ====================
         let autoRotate = gsap.to(stage, {
@@ -546,7 +559,9 @@
         ];
 
         const petalData = [];
-        const PETAL_COUNT = 110;
+        const isMobile = window.innerWidth < 768 || /Mobi|Android/i.test(navigator.userAgent);
+        const PETAL_COUNT = isMobile ? 45 : 110;
+        const STAR_COUNT = isMobile ? 40 : 110;
 
         // 预计算花瓣形状（画一次，之后用 drawImage 复制，性能远超逐个绘制路径）
         function makePetalTex(size, color) {
@@ -574,10 +589,10 @@
         }
 
         const petalTextures = [];
-        // 预生成不同尺寸/颜色的纹理池
-        const texSizes = [6, 9, 13, 17];
+        const texSizes = isMobile ? [8, 14] : [6, 9, 13, 17];
+        const texColors = isMobile ? petalColors.slice(0, 6) : petalColors;
         texSizes.forEach(sz => {
-            petalColors.forEach(col => {
+            texColors.forEach(col => {
                 petalTextures.push({ tex: makePetalTex(sz, col), size: sz });
             });
         });
@@ -658,7 +673,7 @@
 
         // ==================== Canvas 背景星光 ====================
         const stars = [];
-        for (let i = 0; i < 110; i++) {
+        for (let i = 0; i < STAR_COUNT; i++) {
             stars.push({
                 x: Math.random() * W,
                 y: Math.random() * H,
@@ -689,8 +704,10 @@
                 starCtx.beginPath();
                 starCtx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
                 starCtx.fillStyle = `rgba(${r},${g},${s.isPink ? 185 : 200},${alpha})`;
-                starCtx.shadowBlur = s.size * (3 + bassV * 10);
-                starCtx.shadowColor = `rgba(${r},${g},${s.isPink ? 185 : 200},${alpha})`;
+                if (!isMobile) {
+                    starCtx.shadowBlur = s.size * (3 + bassV * 10);
+                    starCtx.shadowColor = `rgba(${r},${g},${s.isPink ? 185 : 200},${alpha})`;
+                }
                 starCtx.fill();
             }
             starCtx.shadowBlur = 0;
